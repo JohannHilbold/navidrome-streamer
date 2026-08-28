@@ -6,6 +6,7 @@
 #include "player.h"
 #include "settings.h"
 #include "portal.h"
+#include "snake.h"
 #include <string.h>
 #include <WiFi.h>
 
@@ -18,6 +19,7 @@ enum ScreenType {
     SCREEN_PLAYLIST_LIST,
     SCREEN_PLAYLIST_SONGS,
     SCREEN_RADIO_LIST,
+    SCREEN_SNAKE,
     SCREEN_NOW_PLAYING,
     SCREEN_SETTINGS,
 };
@@ -83,13 +85,13 @@ static void loadScreenData() {
 
     switch (current().type) {
         case SCREEN_MAIN_MENU: {
-            static const char* names[] = {"Favorites", "Artists", "Playlists", "Radio", "Settings"};
-            static const char* ids[]   = {"fav", "art", "pls", "rad", "set"};
-            for (int i = 0; i < 5; i++) {
+            static const char* names[] = {"Favorites", "Artists", "Playlists", "Radio", "Snake", "Settings"};
+            static const char* ids[]   = {"fav", "art", "pls", "rad", "snk", "set"};
+            for (int i = 0; i < 6; i++) {
                 strlcpy(menuItems[i].id, ids[i], sizeof(menuItems[0].id));
                 strlcpy(menuItems[i].name, names[i], sizeof(menuItems[0].name));
             }
-            menuItemCount = 5;
+            menuItemCount = 6;
             break;
         }
         case SCREEN_STARRED_ALBUMS:
@@ -179,6 +181,9 @@ static void selectItem() {
             } else if (strcmp(menuItems[idx].id, "rad") == 0) {
                 pushScreen(SCREEN_RADIO_LIST, "");
                 loadScreenData();
+            } else if (strcmp(menuItems[idx].id, "snk") == 0) {
+                pushScreen(SCREEN_SNAKE, "");
+                snakeStart();
             } else if (strcmp(menuItems[idx].id, "set") == 0) {
                 pushScreen(SCREEN_SETTINGS, "");
                 loadScreenData();
@@ -360,6 +365,18 @@ void uiInit() {
 
 void uiLoop() {
     InputAction action = inputPoll();
+
+    if (current().type == SCREEN_SNAKE) {
+        if (action != INPUT_NONE) {
+            bool exit = snakeHandleInput(action);
+            if (exit) {
+                popScreen();
+                loadScreenData();
+            }
+        }
+        snakeLoop();
+        return;
+    }
 
     if (action != INPUT_NONE) {
         if (current().type == SCREEN_NOW_PLAYING)
