@@ -26,6 +26,9 @@ extern const char* SUBSONIC_CLIENT;
 #define COL_WHITE  0xFFFF
 #define COL_GRAY   SWAPCOLOR(0xC618)
 #define COL_DKGRAY SWAPCOLOR(0x8410)
+#define COL_CYAN   SWAPCOLOR(0x0677)
+
+#define BATTERY_ADC_PIN 1
 
 // ---- Display layout ----
 #define SCREEN_W    360

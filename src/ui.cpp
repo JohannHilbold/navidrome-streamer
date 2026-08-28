@@ -344,6 +344,28 @@ static void handleNowPlayingInput(InputAction action) {
     }
 }
 
+static int cachedBatteryPct = -1;
+static unsigned long lastBatteryRead = 0;
+
+static int getBatteryPercent() {
+    unsigned long now = millis();
+    if (cachedBatteryPct >= 0 && now - lastBatteryRead < 30000)
+        return cachedBatteryPct;
+
+    long sum = 0;
+    for (int i = 0; i < 32; i++)
+        sum += analogRead(BATTERY_ADC_PIN);
+    float voltage = (sum / 32.0) * 2.0 * 3.3 / 4095.0;
+
+    int pct = (int)((voltage - 3.0) / (4.2 - 3.0) * 100.0);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+
+    cachedBatteryPct = pct;
+    lastBatteryRead = now;
+    return pct;
+}
+
 static void renderCurrentScreen() {
     if (current().type == SCREEN_NOW_PLAYING) {
         renderNowPlaying();
@@ -351,6 +373,12 @@ static void renderCurrentScreen() {
     }
     lcdDrawMenuList(screenTitle(), menuItems, menuItemCount,
                     current().cursorIndex, current().scrollOffset);
+
+    if (current().type == SCREEN_MAIN_MENU) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "Bat %d%%", getBatteryPercent());
+        lcdDrawTextCentered(330, buf, COL_CYAN, COL_BG, 2);
+    }
 }
 
 void uiInit() {
