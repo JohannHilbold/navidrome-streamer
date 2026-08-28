@@ -6,6 +6,7 @@ struct QueueEntry {
     char title[52];
     char artist[40];
     char coverArt[40];
+    uint32_t duration;
 };
 
 void    playerInit();
@@ -29,6 +30,8 @@ bool    playerCheckEof();
 const char* playerCurrentTitle();
 const char* playerCurrentArtist();
 const char* playerCurrentCoverArt();
+uint32_t    playerGetElapsed();
+uint32_t    playerGetDuration();
 
 void    playerPlayRadio(const char* name, const char* url);
 bool    playerIsRadio();

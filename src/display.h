@@ -14,3 +14,4 @@ void    fetchAndDrawCoverArt(const char* coverArtId);
 void    lcdDrawMenuList(const char* title, MenuItem* items, int itemCount,
                         int cursorIndex, int scrollOffset);
 void    lcdDrawOverlay(const char* text);
+void    lcdDrawProgressRing(float progress);

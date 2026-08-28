@@ -117,6 +117,13 @@ const char* playerCurrentCoverArt() {
     return "";
 }
 
+uint32_t playerGetElapsed()  { return audio.getAudioCurrentTime(); }
+uint32_t playerGetDuration() {
+    if (queueIdx >= 0 && queueIdx < queueSize && queue[queueIdx].duration > 0)
+        return queue[queueIdx].duration;
+    return audio.getAudioFileDuration();
+}
+
 void playerPlayRadio(const char* name, const char* url) {
     audio.stopSong();
     queueSize = 0;
@@ -154,6 +161,7 @@ static bool loadQueueFromJson(const String& response, const char* parentKey,
         strlcpy(entries[count].title, s["title"] | "", sizeof(entries[0].title));
         strlcpy(entries[count].artist, s["artist"] | albumArtist, sizeof(entries[0].artist));
         strlcpy(entries[count].coverArt, s["coverArt"] | albumCoverArt, sizeof(entries[0].coverArt));
+        entries[count].duration = s["duration"] | 0;
         count++;
     }
 

@@ -71,12 +71,25 @@ static const char* screenTitle() {
     }
 }
 
+static void drawProgressRing() {
+    uint32_t elapsed = playerGetElapsed();
+    uint32_t dur = playerGetDuration();
+    if (dur > 0 && !playerIsRadio()) {
+        float progress = (float)elapsed / dur;
+        Serial.printf("[ring] el=%u dur=%u prog=%.2f\n", elapsed, dur, progress);
+        lcdDrawProgressRing(progress);
+    } else {
+        Serial.printf("[ring] skipped: dur=%u radio=%d\n", dur, playerIsRadio());
+    }
+}
+
 static void renderNowPlaying() {
     if (playerIsRadio()) {
         lcdShowNowPlaying(playerCurrentTitle(), "Web Radio", "");
     } else {
         lcdShowNowPlaying(playerCurrentTitle(), playerCurrentArtist(), "");
         fetchAndDrawCoverArt(playerCurrentCoverArt());
+        drawProgressRing();
     }
 }
 
@@ -428,5 +441,14 @@ void uiLoop() {
     if (needsRedraw) {
         needsRedraw = false;
         renderCurrentScreen();
+    }
+
+    static unsigned long lastRingUpdate = 0;
+    if (current().type == SCREEN_NOW_PLAYING && overlayUntil == 0) {
+        unsigned long now = millis();
+        if (now - lastRingUpdate >= 1000) {
+            lastRingUpdate = now;
+            drawProgressRing();
+        }
     }
 }

@@ -416,3 +416,49 @@ void lcdDrawOverlay(const char* text) {
     lcdFillRect(0, 300, SCREEN_W, 40, COL_BG);
     lcdDrawTextCentered(310, text, COL_WHITE, COL_BG, 2);
 }
+
+#define COL_GLOW1 SWAPCOLOR(0x0455)
+#define COL_GLOW2 SWAPCOLOR(0x0233)
+
+void lcdDrawProgressRing(float progress) {
+    if (progress < 0) progress = 0;
+    if (progress > 1) progress = 1;
+
+    const int cx = SCREEN_W / 2;
+    const int cy = SCREEN_H / 2;
+    const int radius = 170;
+    const int segments = 72;
+    const int sz = 10;
+    const int half = sz / 2;
+
+    uint16_t buf[10 * 10];
+
+    for (int i = 0; i < segments; i++) {
+        float angle = -1.5708f + (6.2832f * i / segments);
+        int ox = cx + (int)(radius * cosf(angle)) - half;
+        int oy = cy + (int)(radius * sinf(angle)) - half;
+
+        if (ox < 0 || oy < 0 || ox + sz > SCREEN_W || oy + sz > SCREEN_H) continue;
+
+        float seg = (float)i / segments;
+        if (seg > progress) continue;
+        uint16_t core  = COL_CYAN;
+        uint16_t glow1 = COL_GLOW1;
+        uint16_t glow2 = COL_GLOW2;
+
+        for (int py = 0; py < sz; py++) {
+            for (int px = 0; px < sz; px++) {
+                int dx = px - half;
+                int dy = py - half;
+                int d2 = dx * dx + dy * dy;
+                uint16_t c;
+                if (d2 <= 2)       c = core;
+                else if (d2 <= 8)  c = glow1;
+                else if (d2 <= 16) c = glow2;
+                else               c = COL_BG;
+                buf[py * sz + px] = c;
+            }
+        }
+        esp_lcd_panel_draw_bitmap(lcd_panel, ox, oy, ox + sz, oy + sz, buf);
+    }
+}
