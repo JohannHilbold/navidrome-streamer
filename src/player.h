@@ -29,3 +29,9 @@ bool    playerCheckEof();
 const char* playerCurrentTitle();
 const char* playerCurrentArtist();
 const char* playerCurrentCoverArt();
+
+void    playerPlayRadio(const char* name, const char* url);
+bool    playerIsRadio();
+
+bool    playerLoadAlbum(const char* albumId, int startIndex);
+bool    playerLoadPlaylist(const char* playlistId, int startIndex);

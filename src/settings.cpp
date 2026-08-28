@@ -90,6 +90,56 @@ void settingsSetNavidrome(const char* url, const char* user, const char* pass) {
     Serial.printf("[settings] Navidrome: %s user=%s\n", url, user);
 }
 
+int settingsGetRadioCount() {
+    return prefs.getInt("radio_count", 0);
+}
+
+RadioStation settingsGetRadio(int index) {
+    RadioStation r = {};
+    if (index < 0 || index >= settingsGetRadioCount()) return r;
+    char keyN[12], keyU[12];
+    snprintf(keyN, sizeof(keyN), "rn_%d", index);
+    snprintf(keyU, sizeof(keyU), "ru_%d", index);
+    strlcpy(r.name, prefs.getString(keyN, "").c_str(), sizeof(r.name));
+    strlcpy(r.url, prefs.getString(keyU, "").c_str(), sizeof(r.url));
+    return r;
+}
+
+void settingsAddRadio(const char* name, const char* url) {
+    int count = settingsGetRadioCount();
+    if (count >= MAX_RADIO_STATIONS) return;
+
+    char keyN[12], keyU[12];
+    snprintf(keyN, sizeof(keyN), "rn_%d", count);
+    snprintf(keyU, sizeof(keyU), "ru_%d", count);
+    prefs.putString(keyN, name);
+    prefs.putString(keyU, url);
+    prefs.putInt("radio_count", count + 1);
+    Serial.printf("[settings] Added radio: %s (%d total)\n", name, count + 1);
+}
+
+void settingsRemoveRadio(int index) {
+    int count = settingsGetRadioCount();
+    if (index < 0 || index >= count) return;
+
+    for (int i = index; i < count - 1; i++) {
+        RadioStation next = settingsGetRadio(i + 1);
+        char keyN[12], keyU[12];
+        snprintf(keyN, sizeof(keyN), "rn_%d", i);
+        snprintf(keyU, sizeof(keyU), "ru_%d", i);
+        prefs.putString(keyN, next.name);
+        prefs.putString(keyU, next.url);
+    }
+
+    char keyN[12], keyU[12];
+    snprintf(keyN, sizeof(keyN), "rn_%d", count - 1);
+    snprintf(keyU, sizeof(keyU), "ru_%d", count - 1);
+    prefs.remove(keyN);
+    prefs.remove(keyU);
+    prefs.putInt("radio_count", count - 1);
+    Serial.printf("[settings] Removed radio #%d (%d remaining)\n", index, count - 1);
+}
+
 void settingsResetAll() {
     prefs.clear();
     Serial.println("[settings] All settings cleared");

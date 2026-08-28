@@ -2,6 +2,7 @@
 #include "config.h"
 #include "api.h"
 #include "Audio.h"
+#include <ArduinoJson.h>
 
 static Audio audio;
 static int currentVolume = 10;
@@ -12,6 +13,10 @@ static volatile bool eofFlag = false;
 static QueueEntry* queue = NULL;
 static int queueSize = 0;
 static int queueIdx = -1;
+
+static bool radioMode = false;
+static char radioName[52] = "";
+static char radioUrl[128] = "";
 
 void playerInit() {
     queue = (QueueEntry*)ps_malloc(MAX_QUEUE * sizeof(QueueEntry));
@@ -44,6 +49,7 @@ int playerCurrentIndex() { return queueIdx; }
 
 void playerPlayCurrent() {
     if (queueIdx < 0 || queueIdx >= queueSize) return;
+    radioMode = false;
     QueueEntry& t = queue[queueIdx];
     paused = false;
     eofFlag = false;
@@ -109,6 +115,64 @@ const char* playerCurrentArtist() {
 const char* playerCurrentCoverArt() {
     if (queueIdx >= 0 && queueIdx < queueSize) return queue[queueIdx].coverArt;
     return "";
+}
+
+void playerPlayRadio(const char* name, const char* url) {
+    audio.stopSong();
+    queueSize = 0;
+    queueIdx = -1;
+    radioMode = true;
+    strlcpy(radioName, name, sizeof(radioName));
+    strlcpy(radioUrl, url, sizeof(radioUrl));
+    paused = false;
+    eofFlag = false;
+    Serial.printf("[player] Radio: %s\n", name);
+    audio.connecttohost(url);
+}
+
+bool playerIsRadio() { return radioMode; }
+
+static bool loadQueueFromJson(const String& response, const char* parentKey,
+                               const char* arrayKey, int startIndex) {
+    JsonDocument doc;
+    if (deserializeJson(doc, response)) return false;
+
+    JsonObject parent = doc["subsonic-response"][parentKey];
+    JsonArray songs = parent[arrayKey];
+    if (songs.isNull()) return false;
+
+    const char* albumCoverArt = parent["coverArt"] | "";
+    const char* albumArtist = parent["artist"] | "";
+
+    QueueEntry* entries = (QueueEntry*)ps_malloc(MAX_QUEUE * sizeof(QueueEntry));
+    if (!entries) return false;
+
+    int count = 0;
+    for (JsonObject s : songs) {
+        if (count >= MAX_QUEUE) break;
+        strlcpy(entries[count].id, s["id"] | "", sizeof(entries[0].id));
+        strlcpy(entries[count].title, s["title"] | "", sizeof(entries[0].title));
+        strlcpy(entries[count].artist, s["artist"] | albumArtist, sizeof(entries[0].artist));
+        strlcpy(entries[count].coverArt, s["coverArt"] | albumCoverArt, sizeof(entries[0].coverArt));
+        count++;
+    }
+
+    playerLoadQueue(entries, count, startIndex);
+    free(entries);
+    playerPlayCurrent();
+    return true;
+}
+
+bool playerLoadAlbum(const char* albumId, int startIndex) {
+    String r = apiCall(buildApiUrl("getAlbum.view") + "&id=" + albumId);
+    if (r.length() == 0) return false;
+    return loadQueueFromJson(r, "album", "song", startIndex);
+}
+
+bool playerLoadPlaylist(const char* playlistId, int startIndex) {
+    String r = apiCall(buildApiUrl("getPlaylist.view") + "&id=" + playlistId);
+    if (r.length() == 0) return false;
+    return loadQueueFromJson(r, "playlist", "entry", startIndex);
 }
 
 // Audio callbacks (weak-linked by the Audio library)

@@ -7,9 +7,7 @@
 #include "settings.h"
 #include "portal.h"
 #include <string.h>
-#include <ArduinoJson.h>
-
-#define MAX_QUEUE 200
+#include <WiFi.h>
 
 enum ScreenType {
     SCREEN_MAIN_MENU,
@@ -19,6 +17,7 @@ enum ScreenType {
     SCREEN_ALBUM_SONGS,
     SCREEN_PLAYLIST_LIST,
     SCREEN_PLAYLIST_SONGS,
+    SCREEN_RADIO_LIST,
     SCREEN_NOW_PLAYING,
     SCREEN_SETTINGS,
 };
@@ -64,14 +63,19 @@ static const char* screenTitle() {
         case SCREEN_ALBUM_SONGS:    return "Songs";
         case SCREEN_PLAYLIST_LIST:  return "Playlists";
         case SCREEN_PLAYLIST_SONGS: return "Songs";
+        case SCREEN_RADIO_LIST:     return "Radio";
         case SCREEN_SETTINGS:       return "Settings";
         default: return "";
     }
 }
 
 static void renderNowPlaying() {
-    lcdShowNowPlaying(playerCurrentTitle(), playerCurrentArtist(), "");
-    fetchAndDrawCoverArt(playerCurrentCoverArt());
+    if (playerIsRadio()) {
+        lcdShowNowPlaying(playerCurrentTitle(), "Web Radio", "");
+    } else {
+        lcdShowNowPlaying(playerCurrentTitle(), playerCurrentArtist(), "");
+        fetchAndDrawCoverArt(playerCurrentCoverArt());
+    }
 }
 
 static void loadScreenData() {
@@ -79,13 +83,13 @@ static void loadScreenData() {
 
     switch (current().type) {
         case SCREEN_MAIN_MENU: {
-            static const char* names[] = {"Favorites", "Artists", "Playlists", "Settings"};
-            static const char* ids[]   = {"fav", "art", "pls", "set"};
-            for (int i = 0; i < 4; i++) {
+            static const char* names[] = {"Favorites", "Artists", "Playlists", "Radio", "Settings"};
+            static const char* ids[]   = {"fav", "art", "pls", "rad", "set"};
+            for (int i = 0; i < 5; i++) {
                 strlcpy(menuItems[i].id, ids[i], sizeof(menuItems[0].id));
                 strlcpy(menuItems[i].name, names[i], sizeof(menuItems[0].name));
             }
-            menuItemCount = 4;
+            menuItemCount = 5;
             break;
         }
         case SCREEN_STARRED_ALBUMS:
@@ -112,14 +116,28 @@ static void loadScreenData() {
             lcdShowMessage("Loading...", "Songs");
             menuItemCount = apiGetPlaylistSongs(current().contextId, menuItems, MAX_MENU_ITEMS);
             break;
-        case SCREEN_SETTINGS: {
-            static const char* names[] = {"WiFi Setup", "Reset All"};
-            static const char* ids[]   = {"wifi", "reset"};
-            for (int i = 0; i < 2; i++) {
-                strlcpy(menuItems[i].id, ids[i], sizeof(menuItems[0].id));
-                strlcpy(menuItems[i].name, names[i], sizeof(menuItems[0].name));
+        case SCREEN_RADIO_LIST: {
+            int count = settingsGetRadioCount();
+            for (int i = 0; i < count && i < MAX_MENU_ITEMS; i++) {
+                RadioStation r = settingsGetRadio(i);
+                snprintf(menuItems[i].id, sizeof(menuItems[0].id), "%d", i);
+                strlcpy(menuItems[i].name, r.name, sizeof(menuItems[0].name));
             }
-            menuItemCount = 2;
+            menuItemCount = count;
+            break;
+        }
+        case SCREEN_SETTINGS: {
+            strlcpy(menuItems[0].id, "wifi", sizeof(menuItems[0].id));
+            strlcpy(menuItems[0].name, "WiFi Setup", sizeof(menuItems[0].name));
+
+            strlcpy(menuItems[1].id, "ip", sizeof(menuItems[0].id));
+            String ipLabel = "Remote: " + WiFi.localIP().toString();
+            strlcpy(menuItems[1].name, ipLabel.c_str(), sizeof(menuItems[0].name));
+
+            strlcpy(menuItems[2].id, "reset", sizeof(menuItems[0].id));
+            strlcpy(menuItems[2].name, "Reset All", sizeof(menuItems[0].name));
+
+            menuItemCount = 3;
             break;
         }
         default:
@@ -131,40 +149,14 @@ static void loadScreenData() {
 static void loadQueueAndPlay(ScreenType type, const char* contextId, int startIndex) {
     lcdShowMessage("Loading...", NULL);
 
-    String endpoint = (type == SCREEN_ALBUM_SONGS) ? "getAlbum.view" : "getPlaylist.view";
-    String r = apiCall(buildApiUrl(endpoint) + "&id=" + contextId);
-    if (r.length() == 0) return;
+    bool ok;
+    if (type == SCREEN_ALBUM_SONGS)
+        ok = playerLoadAlbum(contextId, startIndex);
+    else
+        ok = playerLoadPlaylist(contextId, startIndex);
 
-    JsonDocument doc;
-    if (deserializeJson(doc, r)) return;
+    if (!ok) return;
 
-    const char* parentKey = (type == SCREEN_ALBUM_SONGS) ? "album" : "playlist";
-    const char* arrayKey = (type == SCREEN_ALBUM_SONGS) ? "song" : "entry";
-
-    JsonObject parent = doc["subsonic-response"][parentKey];
-    JsonArray songs = parent[arrayKey];
-    if (songs.isNull()) return;
-
-    const char* albumCoverArt = parent["coverArt"] | "";
-    const char* albumArtist = parent["artist"] | "";
-
-    QueueEntry* entries = (QueueEntry*)ps_malloc(MAX_QUEUE * sizeof(QueueEntry));
-    if (!entries) return;
-
-    int count = 0;
-    for (JsonObject s : songs) {
-        if (count >= MAX_QUEUE) break;
-        strlcpy(entries[count].id, s["id"] | "", sizeof(entries[0].id));
-        strlcpy(entries[count].title, s["title"] | "", sizeof(entries[0].title));
-        strlcpy(entries[count].artist, s["artist"] | albumArtist, sizeof(entries[0].artist));
-        strlcpy(entries[count].coverArt, s["coverArt"] | albumCoverArt, sizeof(entries[0].coverArt));
-        count++;
-    }
-
-    playerLoadQueue(entries, count, startIndex);
-    free(entries);
-
-    playerPlayCurrent();
     pushScreen(SCREEN_NOW_PLAYING, "");
     renderNowPlaying();
 }
@@ -183,6 +175,9 @@ static void selectItem() {
                 loadScreenData();
             } else if (strcmp(menuItems[idx].id, "pls") == 0) {
                 pushScreen(SCREEN_PLAYLIST_LIST, "");
+                loadScreenData();
+            } else if (strcmp(menuItems[idx].id, "rad") == 0) {
+                pushScreen(SCREEN_RADIO_LIST, "");
                 loadScreenData();
             } else if (strcmp(menuItems[idx].id, "set") == 0) {
                 pushScreen(SCREEN_SETTINGS, "");
@@ -210,6 +205,17 @@ static void selectItem() {
         case SCREEN_PLAYLIST_SONGS:
             loadQueueAndPlay(current().type, current().contextId, idx);
             break;
+
+        case SCREEN_RADIO_LIST: {
+            int stationIdx = atoi(menuItems[idx].id);
+            RadioStation r = settingsGetRadio(stationIdx);
+            if (strlen(r.url) > 0) {
+                playerPlayRadio(r.name, r.url);
+                pushScreen(SCREEN_NOW_PLAYING, "");
+                renderNowPlaying();
+            }
+            break;
+        }
 
         case SCREEN_SETTINGS:
             if (strcmp(menuItems[idx].id, "wifi") == 0) {
@@ -292,13 +298,17 @@ static void handleNowPlayingInput(InputAction action) {
             break;
 
         case INPUT_SWIPE_RIGHT:
-            playerPlayNext();
-            renderNowPlaying();
+            if (!playerIsRadio()) {
+                playerPlayNext();
+                renderNowPlaying();
+            }
             break;
 
         case INPUT_SWIPE_LEFT:
-            playerPlayPrev();
-            renderNowPlaying();
+            if (!playerIsRadio()) {
+                playerPlayPrev();
+                renderNowPlaying();
+            }
             break;
 
         case INPUT_KNOB_CW: {

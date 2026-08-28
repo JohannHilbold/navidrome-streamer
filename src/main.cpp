@@ -9,6 +9,7 @@
 #include "display.h"
 #include "player.h"
 #include "ui.h"
+#include "webconfig.h"
 
 static char _ndUrl[128] = "";
 static char _ndUser[33] = "";
@@ -101,6 +102,7 @@ void setup() {
 
     if (connectWiFiMulti() && testConnection()) {
         uiInit();
+        webconfigStart();
     } else {
         lcdShowMessage("No WiFi", "Starting setup");
         portalStart();
@@ -116,5 +118,6 @@ void loop() {
     }
     playerLoop();
     uiLoop();
+    webconfigLoop();
     handleSerialCommand();
 }
