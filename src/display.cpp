@@ -183,7 +183,61 @@ void lcdFillRect(int x, int y, int w, int h, uint16_t color) {
     free(buf);
 }
 
+// Map UTF-8 accented characters to ASCII equivalents
+static int sanitizeUtf8(const char* in, char* out, int maxOut) {
+    //                             ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏ ÐÑÒÓÔÕÖרÙÚÛÜÝÞß àáâãäåæçèéêëìíîï ðñòóôõö÷øùúûüýþÿ
+    static const char c3map[] = "AAAAAAACEEEEIIIIDNOOOOOxOUUUUYbsaaaaaaaceeeeiiiidnooooo/ouuuuyby";
+
+    int j = 0;
+    for (int i = 0; in[i] && j < maxOut - 1; ) {
+        uint8_t c = (uint8_t)in[i];
+        if (c < 0x80) {
+            out[j++] = in[i++];
+        } else if (c == 0xC3 && in[i+1]) {
+            uint8_t c2 = (uint8_t)in[i+1];
+            if (c2 >= 0x80 && c2 <= 0xBF)
+                out[j++] = c3map[c2 - 0x80];
+            else
+                out[j++] = '?';
+            i += 2;
+        } else if (c == 0xC2 && in[i+1]) {
+            uint8_t c2 = (uint8_t)in[i+1];
+            if (c2 == 0xAB || c2 == 0xBB)
+                out[j++] = '"';
+            else if (c2 == 0xB0)
+                out[j++] = 'o';
+            else
+                out[j++] = '?';
+            i += 2;
+        } else if (c == 0xE2 && in[i+1] && in[i+2]) {
+            uint8_t c2 = (uint8_t)in[i+1], c3 = (uint8_t)in[i+2];
+            if (c2 == 0x80 && (c3 == 0x99 || c3 == 0x98))
+                out[j++] = '\'';
+            else if (c2 == 0x80 && (c3 == 0x9C || c3 == 0x9D))
+                out[j++] = '"';
+            else if (c2 == 0x80 && c3 == 0x93)
+                out[j++] = '-';
+            else if (c2 == 0x80 && c3 == 0x94)
+                out[j++] = '-';
+            else if (c2 == 0x80 && c3 == 0xA6) {
+                out[j++] = '.'; if (j < maxOut-1) out[j++] = '.';
+            } else
+                out[j++] = '?';
+            i += 3;
+        } else {
+            int skip = (c < 0xE0) ? 2 : (c < 0xF0) ? 3 : 4;
+            out[j++] = '?';
+            for (int k = 0; k < skip && in[i]; k++) i++;
+        }
+    }
+    out[j] = '\0';
+    return j;
+}
+
 void lcdDrawText(int x, int y, const char* text, uint16_t fg, uint16_t bg, int scale) {
+    char ascii[128];
+    sanitizeUtf8(text, ascii, sizeof(ascii));
+    text = ascii;
     int len = strlen(text);
     if (len == 0) return;
     int cw = 6 * scale;
